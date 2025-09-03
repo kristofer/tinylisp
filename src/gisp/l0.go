@@ -15,7 +15,7 @@ const (
 	CONS = 0x7ffa
 	CLOS = 0x7ffb
 	NIL  = 0x7ffc
-	N    = 2048
+	N    = 32767
 )
 
 type L float64
@@ -344,29 +344,29 @@ func loadFile(filename string, _ L) L {
 	if err != nil {
 		return atom("FILE-ERROR")
 	}
-	
+
 	input := string(content)
 	parser := newInputParser(input)
 	var result L = nilv
-	
+
 	// Parse and evaluate each expression in the file
 	for parser.ch != 0 {
 		parser.skipWhitespace()
 		if parser.ch == 0 {
 			break
 		}
-		
+
 		expr := parser.readExpr()
 		if T(expr) == ATOM && equ(expr, atom("ERR")) {
 			return atom("PARSE-ERROR")
 		}
-		
+
 		result = eval(expr, env) // Always use current global env
 		if T(result) == ATOM && equ(result, atom("ERR")) {
 			return atom("EVAL-ERROR")
 		}
 	}
-	
+
 	return result
 }
 
@@ -377,20 +377,19 @@ func f_load(t, e L) L {
 	if notv(args) {
 		return atom("MISSING-FILENAME")
 	}
-	
+
 	// Extract filename string from atom
 	filenameAtom := car(args)
 	if T(filenameAtom) != ATOM {
 		return atom("INVALID-FILENAME")
 	}
-	
+
 	i := ord(filenameAtom)
 	filename := ""
 	for j := i; A[j] != 0; j++ {
 		filename += string(A[j])
 	}
-	
-	
+
 	// Load and evaluate the file using global environment
 	return loadFile(filename, env)
 }
