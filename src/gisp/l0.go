@@ -15,7 +15,7 @@ const (
 	CONS = 0x7ffa
 	CLOS = 0x7ffb
 	NIL  = 0x7ffc
-	N    = 1024
+	N    = 2048
 )
 
 type L float64
@@ -316,9 +316,9 @@ func f_cond(t, e L) L {
 
 func f_if(t, e L) L {
 	if notv(eval(car(t), e)) {
-		return eval(car(cdr(cdr(t))), e)  // false condition -> else branch
+		return eval(car(cdr(cdr(t))), e) // false condition -> else branch
 	}
-	return eval(car(cdr(t)), e)          // true condition -> then branch
+	return eval(car(cdr(t)), e) // true condition -> then branch
 }
 
 func f_leta(t, e L) L {
@@ -338,6 +338,63 @@ func f_define(t, e L) L {
 	return car(t)
 }
 
+// Load Lisp code from a file
+func loadFile(filename string, env L) L {
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return atom("FILE-ERROR")
+	}
+	
+	input := string(content)
+	parser := newInputParser(input)
+	var result L = nilv
+	
+	// Parse and evaluate each expression in the file
+	for parser.ch != 0 {
+		parser.skipWhitespace()
+		if parser.ch == 0 {
+			break
+		}
+		
+		expr := parser.readExpr()
+		if T(expr) == ATOM && equ(expr, atom("ERR")) {
+			return atom("PARSE-ERROR")
+		}
+		
+		result = eval(expr, env)
+		if T(result) == ATOM && equ(result, atom("ERR")) {
+			return atom("EVAL-ERROR")
+		}
+	}
+	
+	return result
+}
+
+// Primitive wrapper for loadFile
+func f_load(t, e L) L {
+	// Get the filename argument
+	args := evlis(t, e)
+	if notv(args) {
+		return atom("MISSING-FILENAME")
+	}
+	
+	// Extract filename string from atom
+	filenameAtom := car(args)
+	if T(filenameAtom) != ATOM {
+		return atom("INVALID-FILENAME")
+	}
+	
+	i := ord(filenameAtom)
+	filename := ""
+	for j := i; A[j] != 0; j++ {
+		filename += string(A[j])
+	}
+	
+	
+	// Load and evaluate the file using global environment
+	return loadFile(filename, env)
+}
+
 // Primitive table with all primitives
 var prims map[string]func(L, L) L
 
@@ -345,19 +402,19 @@ var prims map[string]func(L, L) L
 var primIndex map[string]I
 
 // Corrected parser that handles EOF gracefully and fixes atom string extraction
-type correctedParser struct {
+type inputParser struct {
 	input string
 	pos   int
 	ch    byte
 }
 
-func newCorrectedParser(input string) *correctedParser {
-	p := &correctedParser{input: input, pos: 0}
+func newInputParser(input string) *inputParser {
+	p := &inputParser{input: input, pos: 0}
 	p.next()
 	return p
 }
 
-func (p *correctedParser) next() {
+func (p *inputParser) next() {
 	if p.pos < len(p.input) {
 		p.ch = p.input[p.pos]
 		p.pos++
@@ -366,14 +423,14 @@ func (p *correctedParser) next() {
 	}
 }
 
-func (p *correctedParser) skipWhitespace() {
+func (p *inputParser) skipWhitespace() {
 	for p.ch > 0 && p.ch <= ' ' {
 		p.next()
 	}
 }
 
-func (p *correctedParser) readAtom() L {
-	start := p.pos - 1  // Start at current character position
+func (p *inputParser) readAtom() L {
+	start := p.pos - 1 // Start at current character position
 	// Keep reading while we have valid atom characters
 	for p.ch > ' ' && p.ch != '(' && p.ch != ')' && p.ch != '\'' && p.ch != 0 {
 		p.next()
@@ -381,22 +438,22 @@ func (p *correctedParser) readAtom() L {
 	// Extract the atom string - end is where we stopped
 	end := p.pos
 	if p.ch != 0 {
-		end = p.pos - 1  // Back up one if we stopped on a delimiter
+		end = p.pos - 1 // Back up one if we stopped on a delimiter
 	}
 	s := p.input[start:end]
-	
+
 	// Try to parse as number using strconv
 	if len(s) > 0 {
 		if n, err := strconv.ParseFloat(s, 64); err == nil {
 			return L(n)
 		}
 	}
-	
+
 	// Return as atom
 	return atom(s)
 }
 
-func (p *correctedParser) readList() L {
+func (p *inputParser) readList() L {
 	p.skipWhitespace()
 	if p.ch == ')' {
 		p.next()
@@ -405,7 +462,7 @@ func (p *correctedParser) readList() L {
 	if p.ch == 0 {
 		return nilv
 	}
-	
+
 	// Handle dot notation
 	if p.ch == '.' {
 		p.next()
@@ -417,15 +474,15 @@ func (p *correctedParser) readList() L {
 		}
 		return result
 	}
-	
+
 	first := p.readExpr()
 	rest := p.readList()
 	return cons(first, rest)
 }
 
-func (p *correctedParser) readExpr() L {
+func (p *inputParser) readExpr() L {
 	p.skipWhitespace()
-	
+
 	switch p.ch {
 	case 0:
 		return nilv
@@ -507,9 +564,9 @@ func gc() {
 }
 
 var (
-	buf = make([]byte, 40)
+	buf      = make([]byte, 40)
 	see byte = ' '
-	rdr = bufio.NewReader(os.Stdin)
+	rdr      = bufio.NewReader(os.Stdin)
 )
 
 func look() {
@@ -618,23 +675,24 @@ func main() {
 		"let*":   f_leta,
 		"lambda": f_lambda,
 		"define": f_define,
+		"load":   f_load,
 	}
 	fmt.Println("tinylisp")
 	nilv = box(NIL, 0)
 	err = atom("ERR")
 	tru = atom("#t")
 	env = pair(tru, tru, nilv)
-	
+
 	// Initialize primitive index mapping with deterministic order
 	primIndex = make(map[string]I)
 	primOrd := I(0)
-	
+
 	// Use a slice to ensure deterministic order
 	primNames := []string{
-		"eval", "quote", "cons", "car", "cdr", "+", "-", "*", "/", "int", 
-		"<", "eq?", "pair?", "or", "and", "not", "cond", "if", "let*", "lambda", "define",
+		"eval", "quote", "cons", "car", "cdr", "+", "-", "*", "/", "int",
+		"<", "eq?", "pair?", "or", "and", "not", "cond", "if", "let*", "lambda", "define", "load",
 	}
-	
+
 	for _, name := range primNames {
 		if _, exists := prims[name]; exists {
 			primIndex[name] = primOrd
@@ -649,17 +707,17 @@ func main() {
 		if !scanner.Scan() {
 			break // EOF or error
 		}
-		
+
 		input := scanner.Text()
 		if input == "" {
 			continue // Skip empty lines
 		}
-		
+
 		// Parse using our corrected parser logic (same as tests)
-		parser := &correctedParser{input: input, pos: 0}
+		parser := &inputParser{input: input, pos: 0}
 		parser.next()
 		expr := parser.readExpr()
-		
+
 		// Evaluate and print
 		result := eval(expr, env)
 		printExpr(result)
