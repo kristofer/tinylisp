@@ -339,7 +339,7 @@ func f_define(t, e L) L {
 }
 
 // Load Lisp code from a file
-func loadFile(filename string, env L) L {
+func loadFile(filename string, _ L) L {
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return atom("FILE-ERROR")
@@ -361,7 +361,7 @@ func loadFile(filename string, env L) L {
 			return atom("PARSE-ERROR")
 		}
 		
-		result = eval(expr, env)
+		result = eval(expr, env) // Always use current global env
 		if T(result) == ATOM && equ(result, atom("ERR")) {
 			return atom("EVAL-ERROR")
 		}
